@@ -32,7 +32,7 @@
 #include <linux/sched.h>
 
 #include "scull.h"        /* local definitions */
-
+kuid_t custom_uid,custom_euid;
 static dev_t scull_a_firstdev;  /* Where our range begins */
 
 /*
@@ -102,18 +102,21 @@ static DEFINE_SPINLOCK(scull_u_lock);
 static int scull_u_open(struct inode *inode, struct file *filp)
 {
 	struct scull_dev *dev = &scull_u_device; /* device information */
-
+	
 	spin_lock(&scull_u_lock);
+
+	custom_uid = current_uid();
+	custom_euid  = current_euid();
 	if (scull_u_count && 
-	                (scull_u_owner != current_uid()) &&  /* allow user */
-	                (scull_u_owner != current_euid()) && /* allow whoever did su */
-			!capable(CAP_DAC_OVERRIDE)) { /* still allow root */
+	                ((scull_u_owner != custom_uid.val) &&  /* allow user */
+	                (scull_u_owner != custom_euid.val) && /* allow whoever did su */
+			!capable(CAP_DAC_OVERRIDE))) { /* still allow root */
 		spin_unlock(&scull_u_lock);
 		return -EBUSY;   /* -EPERM would confuse the user */
 	}
 
 	if (scull_u_count == 0)
-		scull_u_owner = current_uid(); /* grab it */
+		scull_u_owner = custom_uid.val; /* grab it */
 
 	scull_u_count++;
 	spin_unlock(&scull_u_lock);
@@ -164,14 +167,15 @@ static DEFINE_SPINLOCK(scull_w_lock);
 static inline int scull_w_available(void)
 {
 	return scull_w_count == 0 ||
-		scull_w_owner == current_uid() ||
-		scull_w_owner == current_euid() ||
+		scull_w_owner == custom_uid.val ||
+		scull_w_owner == custom_euid.val ||
 		capable(CAP_DAC_OVERRIDE);
-}
 
 
-static int scull_w_open(struct inode *inode, struct file *filp)
-{
+
+int scull_w_open(struct inode *inode, struct file *filp)
+{	
+	custom_uid = current_uid();	
 	struct scull_dev *dev = &scull_w_device; /* device information */
 
 	spin_lock(&scull_w_lock);
@@ -183,7 +187,7 @@ static int scull_w_open(struct inode *inode, struct file *filp)
 		spin_lock(&scull_w_lock);
 	}
 	if (scull_w_count == 0)
-		scull_w_owner = current_uid(); /* grab it */
+		scull_w_owner = custom_uid.val; /* grab it */
 	scull_w_count++;
 	spin_unlock(&scull_w_lock);
 
@@ -194,7 +198,7 @@ static int scull_w_open(struct inode *inode, struct file *filp)
 	return 0;          /* success */
 }
 
-static int scull_w_release(struct inode *inode, struct file *filp)
+int scull_w_release(struct inode *inode, struct file *filp)
 {
 	int temp;
 
@@ -245,7 +249,7 @@ static DEFINE_SPINLOCK(scull_c_lock);
 static struct scull_dev scull_c_device;   
 
 /* Look for a device or create one if missing */
-static struct scull_dev *scull_c_lookfor_device(dev_t key)
+struct scull_dev *scull_c_lookfor_device(dev_t key)
 {
 	struct scull_listitem *lptr;
 
@@ -271,7 +275,7 @@ static struct scull_dev *scull_c_lookfor_device(dev_t key)
 	return &(lptr->device);
 }
 
-static int scull_c_open(struct inode *inode, struct file *filp)
+int scull_c_open(struct inode *inode, struct file *filp)
 {
 	struct scull_dev *dev;
 	dev_t key;
@@ -297,7 +301,7 @@ static int scull_c_open(struct inode *inode, struct file *filp)
 	return 0;          /* success */
 }
 
-static int scull_c_release(struct inode *inode, struct file *filp)
+int scull_c_release(struct inode *inode, struct file *filp)
 {
 	/*
 	 * Nothing to do, because the device is persistent.
@@ -326,7 +330,7 @@ struct file_operations scull_priv_fops = {
  * And the init and cleanup functions come last
  */
 
-static struct scull_adev_info {
+ struct scull_adev_info {
 	char *name;
 	struct scull_dev *sculldev;
 	struct file_operations *fops;
@@ -341,7 +345,7 @@ static struct scull_adev_info {
 /*
  * Set up a single device.
  */
-static void scull_access_setup (dev_t devno, struct scull_adev_info *devinfo)
+void scull_access_setup (dev_t devno, struct scull_adev_info *devinfo)
 {
 	struct scull_dev *dev = devinfo->sculldev;
 	int err;

@@ -172,12 +172,12 @@ static inline int scull_w_available(void)
 		capable(CAP_DAC_OVERRIDE);
 
 
-
+}
 int scull_w_open(struct inode *inode, struct file *filp)
 {	
-	custom_uid = current_uid();	
+	
 	struct scull_dev *dev = &scull_w_device; /* device information */
-
+	custom_uid = current_uid();	
 	spin_lock(&scull_w_lock);
 	while (! scull_w_available()) {
 		spin_unlock(&scull_w_lock);
